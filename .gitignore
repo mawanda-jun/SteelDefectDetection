@@ -1,4 +1,7 @@
-Dataset
+Dataset/train_images
+Dataset/train_images - backup
+Dataset/test_images - backup
+Dataset/test_images
 SegCaps
 .idea
 
