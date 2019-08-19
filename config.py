@@ -3,8 +3,27 @@ import os
 
 flags = tf.flags
 
-# to keep compatibility with CLI arg
-flags.DEFINE_string('task', 'jps', 'what the hell')
-flags.DEFINE_integer('batchSize', 100, 'training batch size')
+# configuration for competition
+
+# Directories
+flags.DEFINE_string('resources', os.path.join(os.getcwd(), "Dataset"), 'path to dataset and other resources')
+flags.DEFINE_string('train_images_folder', os.path.join(os.getcwd(), "Dataset", "train_images"), 'path to training images')
+flags.DEFINE_string('test_images_folder', os.path.join(os.getcwd(), "Dataset", "test_images"), 'path to test images')
+
+
+flags.DEFINE_string("results", os.path.join(os.getcwd(), "Results"), "path/to/results")
+flags.DEFINE_string("run_name", "run0", "name of the current run")
+
+# network configuration
+flags.DEFINE_integer("batch_size", 60, "batch size")
+flags.DEFINE_integer("epochs", 30, "number of epochs")
+
+# dataset configuration
+flags.DEFINE_integer("img_w", 1600, "original width")
+flags.DEFINE_integer("img_h", 256, "original height")
+flags.DEFINE_integer("channels", 3, "original channels")
+flags.DEFINE_integer("dest_channels", 1, "channels after grayscale")
+
+flags.DEFINE_float("train_size", 0.7, "percentile of training dataset")
 
 conf = tf.flags.FLAGS
