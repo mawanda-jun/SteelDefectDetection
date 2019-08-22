@@ -24,11 +24,11 @@ flags.DEFINE_integer("epochs", 30, "number of epochs")
 flags.DEFINE_integer("img_w", 1600, "original width")
 flags.DEFINE_integer("img_h", 256, "original height")
 flags.DEFINE_integer("channels", 3, "original channels")
-flags.DEFINE_integer("img_w_res", 256, "resized width")
-flags.DEFINE_integer("img_h_res", 32, "resized height")
+flags.DEFINE_integer("img_w_res", 200, "resized width")
+flags.DEFINE_integer("img_h_res", 128, "resized height")
 
 flags.DEFINE_integer("dest_channels", 1, "channels after grayscale")
 
-flags.DEFINE_float("train_size", 0.7, "percentile of training dataset")
+flags.DEFINE_float("train_size", 0.8, "percentile of training dataset")
 
 conf = tf.flags.FLAGS
