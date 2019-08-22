@@ -187,9 +187,6 @@ class DataGenerator:
         img = tf.io.read_file(tf.strings.join((self.train_images_folder, path), separator='/'))
         # decode it as jpeg
         img = tf.image.decode_jpeg(img, channels=1)
-        # data augmentation
-        # img = tf.image.random_flip_left_right(img)
-        # img = tf.image.random_flip_up_down(img)
 
         return img, label
 
@@ -202,8 +199,11 @@ class DataGenerator:
 
         x = tf.image.resize_images(x, (self.img_h_res, self.img_w_res), name='reshape_image')
         y = tf.image.resize_images(y, (self.img_h_res, self.img_w_res), name='reshape_label')
-        return x, y
 
+        # data augmentation
+        # img = tf.image.random_flip_left_right(img)
+        # img = tf.image.random_flip_up_down(img)
+        return x, y
 
     def generate_train_set(self):
         """
@@ -276,13 +276,13 @@ if __name__ == '__main__':
     # visualize steel image with four classes of faults in seperate columns
 
     def viz_steel_img_mask(img, masks):
-        img = cv2.cvtColor(img.astype('float32'), cv2.COLOR_BGR2RGB)
+        img = cv2.cvtColor(img.astype('float32'), cv2.IMREAD_GRAYSCALE)
         fig, ax = plt.subplots(nrows=1, ncols=4, sharey='all', figsize=(20, 10))
         cmaps = ["Reds", "Blues", "Greens", "Purples"]
-        for idx, mask in enumerate(masks):
+        for idx in range(masks.shape[-1]):
             ax[idx].imshow(img)
-            ax[idx].imshow(mask, alpha=0.3, cmap=cmaps[idx])
-
+            ax[idx].imshow(masks[..., idx], alpha=0.3, cmap=cmaps[idx])
+        plt.show()
     grouped_ids = generate_training_dataframe(conf)
 
     #
@@ -302,16 +302,21 @@ if __name__ == '__main__':
         sess.run(iter.initializer)
         # returns a batch of images
         img, label = sess.run([x, labels])
-        n_image = 1
+        n_image = 0
         img = img[n_image]
         label = label[n_image]
-        img = np.array(img, dtype=np.uint8)
-        img = np.squeeze(img)
-        label = np.moveaxis(np.array(label, dtype=np.uint8), 0, -1)
+        # img = np.array(img, dtype=np.uint8)
+        # img = np.squeeze(img)
+        # label = np.array(label, dtype=np.uint8)
+        label_index = []
+        for i in range(label.shape[-1]):
+            label_index.append(not label[..., i].any())
+        # viz_steel_img_mask(img, label)
         print("img shape: {}".format(img.shape))
         print("label shape: {}".format(label.shape))
-        Image.fromarray(img).show()
-        Image.fromarray(label).show()
+        print(label_index)
+        # Image.fromarray(img).show()
+        # Image.fromarray(label).show()
         # viz_steel_img_mask(img, label)
 
 #         # select only one (choose which in [0, batchSize)
