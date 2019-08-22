@@ -3,6 +3,7 @@ Dataset/train_images - backup
 Dataset/test_images - backup
 Dataset/test_images
 SegCaps
+Results
 .idea
 
 # Created by https://www.gitignore.io/api/python,pycharm
