@@ -8,50 +8,6 @@ from typing import List
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
 
-# def images_in_paths(folder_path: str) -> List[str]:
-#     """
-#     Collects paths to all images from one folder and return them as a list
-#     :param folder_path:
-#     :return: list of path/to/image
-#     """
-#     paths = []
-#     folder_path = os.path.join(os.getcwd(), folder_path)
-#     for root, dirs, files in os.walk(folder_path):
-#         for file in files:
-#             paths.append(os.path.join(root, file))
-#     return paths
-#
-#
-# class ImageGenerator:
-#     """
-#     ImageGenerator takes care to serve all path/to/images in the right way and to serve the dataset info about mean,
-#     standard deviation and the number of items in folder.
-#     """
-#
-#     def __init__(self, data_path):
-#         """
-#         Open file once. The object ImageGenerator is kept alive for all the training (and evaluation). So lists and file
-#         are not loaded to disk yet, waiting for call function.
-#         :param data_path: path/to/data folder, in which there are train, val, test folders with images and the file 'info.h5' with
-#         std/mean and number of items in dataset
-#         """
-#         self.data_path = data_path
-#         self.h5f = h5py.File(os.path.join(data_path, 'info.h5'),
-#                              'r')  # it will be closed when the context will be terminated
-#
-#     def __call__(self, dataset_type, num_classes, *args, **kwargs):
-#         """
-#         Instance is called with different dataset_type
-#         :param dataset_type:
-#         :param args:
-#         :param kwargs:
-#         :return:
-#         """
-#         paths = images_in_paths(os.path.join(self.data_path, dataset_type))
-#         labels = [random.randrange(num_classes) for _ in paths]
-#         return paths, labels
-#
-
 class DataGenerator:
     """
     CropsGenerator takes care to load images from disk and convert, crop and serve them as a tf.data.Dataset
@@ -63,6 +19,8 @@ class DataGenerator:
         self.resources = conf.resources  # path to the resources folder. It contains useful files regarding the dataset
         self.img_w = conf.img_w
         self.img_h = conf.img_h
+        self.img_w_res = conf.img_w_res
+        self.img_h_res = conf.img_h_res
 
         self.ids_ep = ImageIds_EncodedPixels  # dictionary coming from the digest_train_csv.py method. Actual dataset
         self.train_size = conf.train_size
@@ -70,6 +28,9 @@ class DataGenerator:
         self.train_id_ep_dict, self.val_id_ep_dict = self.extract_train_val_datasets()  # retrieve dictionaries of training and validation sets
 
         self.batch_size = conf.batch_size  # training_batch_size
+        self.steps_per_train_epoch = len(list(self.train_id_ep_dict.keys())) // self.batch_size
+        self.steps_per_val_epoch = len(list(self.val_id_ep_dict.keys())) // self.batch_size
+
         self.mean_tensor, self.std_tensor = self.get_stats()  # get stats from dataset info
 
     def get_stats(self):
@@ -212,6 +173,7 @@ class DataGenerator:
         rle_to_mask_func = lambda rle_string: self.rle_to_mask(rle_string)
         # map every mask to the rle_to_mask_func function
         label = tf.map_fn(rle_to_mask_func, y, name='stack_rle_strings', dtype=tf.uint8)
+        label = tf.transpose(label, [1, 2, 0], name='transpose_label_channel_last')
         return x, label
 
     def parse_path(self, path: tf.Tensor, label: tf.Tensor) -> (tf.Tensor, tf.Tensor):
@@ -228,14 +190,20 @@ class DataGenerator:
         # data augmentation
         # img = tf.image.random_flip_left_right(img)
         # img = tf.image.random_flip_up_down(img)
-        # cast to tensor with type tf.float16
-        img = tf.cast(img, dtype=tf.float16)
-
-        # make the image distant from std deviation of the dataset
-        # img = tf.math.subtract(img, self.mean_tensor)
-        # img = tf.math.divide(img, self.std_tensor)
 
         return img, label
+
+    def resize_and_norm(self, x, y):
+        # cast to tensor with type tf.float16
+        x = tf.cast(x, dtype=tf.float32)
+        # make the image distant from std deviation of the dataset
+        x = tf.math.subtract(x, self.mean_tensor)
+        x = tf.math.divide(x, self.std_tensor)
+
+        x = tf.image.resize_images(x, (self.img_h_res, self.img_w_res), name='reshape_image')
+        y = tf.image.resize_images(y, (self.img_h_res, self.img_w_res), name='reshape_label')
+        return x, y
+
 
     def generate_train_set(self):
         """
@@ -245,6 +213,7 @@ class DataGenerator:
         """
         parse_path_func = lambda x, y: self.parse_path(x, y)
         process_label_func = lambda x, y: self.process_label(x, y)
+        resize_func = lambda x, y: self.resize_and_norm(x, y)
 
         batch_size = self.batch_size
 
@@ -260,52 +229,41 @@ class DataGenerator:
                 .shuffle(buffer_size=n_el)
                 .map(parse_path_func, num_parallel_calls=AUTOTUNE)
                 .map(process_label_func, num_parallel_calls=AUTOTUNE)  # create actual one_crop
+                .map(resize_func, num_parallel_calls=AUTOTUNE)  # create actual one_crop
                 .batch(batch_size)  # defined batch_size
                 .prefetch(AUTOTUNE)  # number of batches to be prefetch.
                 .repeat()  # repeats the dataset when it is finished
                 )
 
-    # def generate_val_set(self):
-    #     """
-    #     Generates the actual dataset. It uses all the functions defined above to read images from disk and create croppings.
-    #     :param mode: train-val-test
-    #     :return: tf.data.Dataset
-    #     """
-    #     parse_path_func = lambda x, y: self.parse_path(x, y)
-    #     create_croppings_func = lambda x, y, z: self.rle_to_mask(x, y, z)
-    #
-    #     batch_size = self.val_batch_size
-    #     n_el = self.num_val_batch
-    #
-    #     return (tf.data.Dataset.from_tensor_slices(self.img_generator('val', self.numClasses))
-    #             .shuffle(buffer_size=n_el * batch_size)
-    #             .map(parse_path_func, num_parallel_calls=AUTOTUNE)
-    #             .map(create_croppings_func, num_parallel_calls=AUTOTUNE)  # create actual one_crop
-    #             .batch(batch_size)  # defined batch_size
-    #             .prefetch(AUTOTUNE)  # number of batches to be prefetch.
-    #             .repeat()  # repeats the dataset when it is finished
-    #             )
-    #
-    # def generate_test_set(self):
-    #     """
-    #     Generates the actual dataset. It uses all the functions defined above to read images from disk and create croppings.
-    #     :param mode: train-val-test
-    #     :return: tf.data.Dataset
-    #     """
-    #     parse_path_func = lambda x, y: self.parse_path(x, y)
-    #     create_croppings_func = lambda x, y, z: self.rle_to_mask(x, y, z)
-    #
-    #     batch_size = self.batchSize
-    #     n_el = self.num_test_batch
-    #
-    #     return (tf.data.Dataset.from_tensor_slices(self.img_generator('test', self.numClasses))
-    #             .shuffle(buffer_size=n_el * batch_size)
-    #             .map(parse_path_func, num_parallel_calls=AUTOTUNE)
-    #             .map(create_croppings_func, num_parallel_calls=AUTOTUNE)  # create actual one_crop
-    #             .batch(batch_size)  # defined batch_size
-    #             .prefetch(AUTOTUNE)  # number of batches to be prefetch.
-    #             .repeat()  # repeats the dataset when it is finished
-    #             )
+    def generate_val_set(self):
+        """
+        Generates the actual dataset. It uses all the functions defined above to read images from disk and create croppings.
+        :param mode: train-val-test
+        :return: tf.data.Dataset
+        """
+        parse_path_func = lambda x, y: self.parse_path(x, y)
+        process_label_func = lambda x, y: self.process_label(x, y)
+        resize_func = lambda x, y: self.resize_and_norm(x, y)
+
+        batch_size = self.batch_size
+
+        n_el = len(list(self.val_id_ep_dict.keys()))
+        ids = []
+        labels = []
+        for k, v in self.val_id_ep_dict.items():
+            ids.append(k)
+            labels.append(v)
+        id_tensor = tf.constant(ids, dtype=tf.string, shape=([n_el]))
+        label_tensor = tf.constant(labels, dtype=tf.string, shape=(n_el, 4))
+        return (tf.data.Dataset.from_tensor_slices((id_tensor, label_tensor))
+                .shuffle(buffer_size=n_el)
+                .map(parse_path_func, num_parallel_calls=AUTOTUNE)
+                .map(process_label_func, num_parallel_calls=AUTOTUNE)  # create actual one_crop
+                .map(resize_func, num_parallel_calls=AUTOTUNE)  # create actual one_crop
+                .batch(batch_size)  # defined batch_size
+                .prefetch(AUTOTUNE)  # number of batches to be prefetch.
+                .repeat()  # repeats the dataset when it is finished
+                )
 
 
 # # UNCOMMENT ADDITION AND DIVISION PER MEAN AND STD BEFORE TRY TO SEE IMAGES
