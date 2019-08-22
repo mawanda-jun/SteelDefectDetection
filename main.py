@@ -25,8 +25,8 @@ class SteelSeg:
         self.log_dir, self.model_dir, self.save_dir = self.set_dirs()
 
         # copy configuration inside log_dir
-        # copy(os.path.join(os.getcwd(), 'nets', 'CapsNet_jps.py'), os.path.join(os.getcwd(), self.log_dir))
-        # copy(os.path.join(os.getcwd(), 'config.py'), os.path.join(os.getcwd(), self.log_dir))
+        copy(os.path.join(os.getcwd(), 'segcaps.py'), os.path.join(os.getcwd(), self.log_dir))
+        copy(os.path.join(os.getcwd(), 'config.py'), os.path.join(os.getcwd(), self.log_dir))
 
         self.trained = False
 
