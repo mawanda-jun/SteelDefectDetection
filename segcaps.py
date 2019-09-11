@@ -13,20 +13,20 @@ from tensorflow.python.keras import layers, models
 from tensorflow.python.keras import backend as K
 K.set_image_data_format('channels_last')
 
-from SegCaps.capsule_layers import ConvCapsuleLayer, DeconvCapsuleLayer, Mask, Length
+from capsule_layers import ConvCapsuleLayer, DeconvCapsuleLayer, Mask, Length
 
 
 class CapsNet(tf.keras.Model):
-    def __init__(self, conf, n_class=4, **kwargs):
+    def __init__(self, shape, n_class=4, **kwargs):
         super(CapsNet, self).__init__(**kwargs)
-        self.conf = conf
         self.n_class = n_class
+        self.shape = shape
         # Layer 1: Just a conventional Conv2D layer
         self.conv1 = layers.Conv2D(filters=16, kernel_size=5, strides=1, padding='same', activation='relu', name='conv1')
 
         # # Reshape layer to be 1 capsule x [filters] atoms
         # _, H, W, C = self.conv1.get_shape()
-        self.conv1_reshaped = layers.Reshape((conf.img_h_res, conf.img_w_res, 1, 16))
+        self.conv1_reshaped = layers.Reshape((shape[0], shape[1], 1, 16))
 
         # Layer 1: Primary Capsule: Conv cap with routing 1
         self.primary_caps = ConvCapsuleLayer(kernel_size=5, num_capsule=2, num_atoms=16, strides=2, padding='same',
@@ -88,10 +88,10 @@ class CapsNet(tf.keras.Model):
         self.seg_caps = ConvCapsuleLayer(kernel_size=1, num_capsule=1, num_atoms=16, strides=1, padding='same',
                                     routings=3, name='seg_caps')
 
-        self.reshaper = layers.Reshape((conf.img_h_res, conf.img_w_res, 16, 1))
+        self.reshaper = layers.Reshape((shape[0], shape[1], 16, 1))
 
         # Layer 4: This is an auxiliary layer to replace each capsule with its length. Just to match the true label's shape.
-        self.out_seg = layers.Conv2D(filters=n_class, kernel_size=1, name='out_seg')
+        self.out_seg = layers.Conv2D(filters=n_class, kernel_size=1, name='out_seg', activation='sigmoid')
 
     def call(self, inputs, training=None, mask=None):
         conv1 = self.conv1(inputs)
@@ -121,5 +121,5 @@ class CapsNet(tf.keras.Model):
         return out_seg
 
     def summary(self, line_length=None, positions=None, print_fn=None):
-        x = tf.keras.Input(shape=(self.conf.img_h_res, self.conf.img_w_res, self.conf.dest_channels))
+        x = tf.keras.Input(shape=(self.shape[0], self.shape[1], self.shape[2]))
         tf.keras.Model(inputs=x, outputs=self.call(x, training=True)).summary(line_length, positions, print_fn)

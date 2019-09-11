@@ -1,23 +1,27 @@
 import tensorflow as tf
+tf.compat.v1.enable_eager_execution()
+# import tensorflow.python.keras.backend as K
+# dtype = 'float16'
+# K.set_floatx(dtype)
+# K.set_epsilon(1e-4)
+import numpy as np
 import os, glob
 from shutil import copy
 from utils.logger import set_logger
 from dataset_generator import DataGenerator
-from Dataset.digest_train_csv import generate_training_dataframe
+from Dataset.digest_train_csv import Digestive
 from tensorflow.python.keras.callbacks import ModelCheckpoint, CSVLogger, TensorBoard, EarlyStopping, ReduceLROnPlateau
 from segcaps import CapsNet
-from competition_losses import bce_dice_loss, dice_coef
+from competition_losses_metrics import *
 
 from config import conf
-
-tf.enable_eager_execution()
 
 
 class SteelSeg:
     def __init__(self, conf):
         self.conf = conf
 
-        self.data_reader = DataGenerator(conf, generate_training_dataframe(conf))
+        self.data_reader = DataGenerator(conf, Digestive(conf).masks_at_least(1))
 
         self.model = self.build()
 
@@ -27,15 +31,20 @@ class SteelSeg:
         # copy configuration inside log_dir
         copy(os.path.join(os.getcwd(), 'segcaps.py'), os.path.join(os.getcwd(), self.log_dir))
         copy(os.path.join(os.getcwd(), 'config.py'), os.path.join(os.getcwd(), self.log_dir))
+        copy(os.path.join(os.getcwd(), 'main.py'), os.path.join(os.getcwd(), self.log_dir))
+        copy(os.path.join(os.getcwd(), 'competition_losses_metrics.py'), os.path.join(os.getcwd(), self.log_dir))
+        copy(os.path.join(os.getcwd(), 'dataset_generator.py'), os.path.join(os.getcwd(), self.log_dir))
 
         self.trained = False
 
     def build(self):
         # make placeholder to retrieve information about input shape
-        shape = (self.conf.img_h_res, self.conf.img_w_res, self.conf.dest_channels)
+        w_res_bb = self.conf.img_w_res // self.conf.crops_w
+        shape = (self.conf.img_h_res, w_res_bb, self.conf.dest_channels)
+
         inputs = tf.keras.Input(shape)
         # initialize model_on_input
-        train_model = CapsNet(self.conf, n_class=4)
+        train_model = CapsNet(shape=shape, n_class=self.conf.n_classes)
         train_model.build(inputs.shape)
 
         # print summary
@@ -73,7 +82,7 @@ class SteelSeg:
         self.model.load_weights(restore_path)
 
     def setup_callables(self):
-        monitor = "val_dice_hard"
+        monitor = "val_dice_coef"
         # Setup callback to save best weights after each epoch
         checkpointer = ModelCheckpoint(filepath=os.path.join(self.model_dir,
                                                              'weights.{epoch:02d}-{val_loss:.2f}.hdf5'),
@@ -91,8 +100,7 @@ class SteelSeg:
         # setup callback to retrieve tensorboard info
         tensorboard = TensorBoard(log_dir=self.log_dir,
                                   write_graph=True,
-                                  histogram_freq=0,
-                                  write_grads=True)
+                                  histogram_freq=0)
 
         # setup early stopping to stop training if val_loss is not increasing after 3 epochs
         early_stopping = EarlyStopping(
@@ -107,17 +115,17 @@ class SteelSeg:
 
     def compile_model(self):
         # set optimizer
-        # TODO: check what is "decay" in original paper
         optimizer = tf.keras.optimizers.Adam(
             learning_rate=self.conf.learning_rate,
             beta_1=0.99,
             beta_2=0.999,
         )
-
+        metrics = [dice_class_0, dice_class_1, dice_class_2, dice_class_3, dice_coef]
+        # metrics = [dice_coef]
         self.model.compile(
             optimizer=optimizer,
-            loss=bce_dice_loss,
-            metrics=[dice_coef]
+            loss=generalised_dice_loss,
+            metrics=metrics
         )
 
     def train(self):
