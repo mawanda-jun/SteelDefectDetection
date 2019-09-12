@@ -123,3 +123,26 @@ class CapsNet(tf.keras.Model):
     def summary(self, line_length=None, positions=None, print_fn=None):
         x = tf.keras.Input(shape=(self.shape[0], self.shape[1], self.shape[2]))
         tf.keras.Model(inputs=x, outputs=self.call(x, training=True)).summary(line_length, positions, print_fn)
+
+
+class Container(tf.keras.Model):
+    def __init__(self, shape, n_class=4, **kwargs):
+        super(Container, self).__init__(**kwargs)
+        self.n_class = n_class
+        self.shape = shape
+        self.class0 = CapsNet(shape, 1)
+        self.class1 = CapsNet(shape, 1)
+        self.class2 = CapsNet(shape, 1)
+        self.class3 = CapsNet(shape, 1)
+
+    def call(self, inputs, training=None, mask=None):
+        output0 = self.class0(inputs)
+        output1 = self.class1(inputs)
+        output2 = self.class2(inputs)
+        output3 = self.class3(inputs)
+        output = tf.concat((output0, output1, output2, output3), axis=3)
+        return output
+
+    def summary(self, line_length=None, positions=None, print_fn=None):
+        x = tf.keras.Input(shape=(self.shape[0], self.shape[1], self.shape[2]))
+        tf.keras.Model(inputs=x, outputs=self.call(x, training=True)).summary(line_length, positions, print_fn)

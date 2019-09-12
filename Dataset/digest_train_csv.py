@@ -3,6 +3,7 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import os
+from PIL import Image
 
 
 class Digestive:
@@ -56,6 +57,45 @@ class Digestive:
         return new_dict
 
 
+def mask2rle(img):
+    '''
+    img: numpy array, 1 - mask, 0 - background
+    Returns run length as string formated
+    '''
+    pixels= img.T.flatten()
+    pixels = np.concatenate([[0], pixels, [0]])
+    runs = np.where(pixels[1:] != pixels[:-1])[0] + 1
+    runs[1::2] -= runs[::2]
+    return ' '.join(str(x) for x in runs)
+
+
+def rle2mask(mask_rle, shape=(1600, 256)):
+    '''
+    mask_rle: run-length as string formated (start length)
+    shape: (width,height) of array to return
+    Returns numpy array, 1 - mask, 0 - background
+    '''
+    s = mask_rle.split()
+    starts, lengths = [np.asarray(x, dtype=int) for x in (s[0:][::2], s[1:][::2])]
+    starts -= 1
+    ends = starts + lengths
+    img = np.zeros(shape[0]*shape[1], dtype=np.uint8)
+    for lo, hi in zip(starts, ends):
+        img[lo:hi] = 1
+    return img.reshape(shape).T
+
+
+def write_masks_on_disk(masks, folder_path, shape=(256, 1600, 4)):
+    os.makedirs(folder_path, exist_ok=False)
+    for k, v in tqdm(masks.items()):
+        img = np.zeros((shape), dtype=np.uint8)
+        out_path = os.path.join(folder_path, k+".png")
+        for n_mask, mask in v:
+            if mask is not -1:
+                img[:, :, int(n_mask)-1] = rle2mask(mask)
+        Image.fromarray(img).save(out_path, mode='RGBA')
+
+
 if __name__ == '__main__':
     only_masks = Digestive(conf).keep_masks([0, 1, 2, 3])
     # print("SANITY CHECK 1.\nChecks if every key in the grouped ids is available inside training images folder")
@@ -85,12 +125,13 @@ if __name__ == '__main__':
     #     img_ids.pop(i)
     #     found = False
     # print(list(zip(*grouped_EncodedPixels.items())))
-    for k, v in only_masks.items():
-        found_mask = False
-        for mask in v:
-            if mask is not -1:
-                found_mask = True
-                break
-        if not found_mask:
-            raise ValueError("There are empty masks")
+    # for k, v in only_masks.items():
+    #     found_mask = False
+    #     for mask in v:
+    #         if mask is not -1:
+    #             found_mask = True
+    #             break
+    #     if not found_mask:
+    #         raise ValueError("There are empty masks")
+    write_masks_on_disk(only_masks, os.path.join("Dataset", "masks"))
     print("Number of images with at least one mask: {}".format(len(list(only_masks.keys()))))

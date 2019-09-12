@@ -4,9 +4,8 @@ import tensorflow as tf
 
 from config import conf
 
-
 # METRICS
-def dice_coef(y_true, y_pred, smooth=1):
+def dice_coef(y_true, y_pred, smooth=1.):
     """
     Dice coefficient only on masks labels:
     :param y_true:
@@ -14,14 +13,13 @@ def dice_coef(y_true, y_pred, smooth=1):
     :param smooth:
     :return:
     """
-    # for metrics, it's good to round predictions:
-    y_pred = K.round(y_pred)
+    # # for metrics, it's good to round predictions:
+    # y_pred = K.round(y_pred)
 
-    y_true_f = K.flatten(y_true)
-    y_pred_f = K.flatten(y_pred)
-    intersection = K.sum(y_true_f * y_pred_f)
-    return (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
-
+    y_true_f = tf.reshape(y_true, [-1])
+    y_pred_f = tf.reshape(y_pred, [-1])
+    intersection = tf.reduce_sum(y_true_f * y_pred_f)
+    return (2. * intersection + smooth) / (tf.reduce_sum(y_true_f) + tf.reduce_sum(y_pred_f) + smooth)
 
 def dice_class_0(y_true, y_pred):
     return dice_coef(y_true[:, :, :, 0], y_pred[:, :, :, 0])
@@ -63,15 +61,7 @@ def dice_loss(y_true, y_pred):
     :param y_pred:
     :return:
     """
-    smooth = 1.
-    # class_w = [.2, .2, .3, .3]
-    # class_w = [c * len(class_w) for c in class_w]
-    # intersection = K.sum(y_true * y_pred, axis=(0, 1, 2)) * class_w
-    intersection = K.sum(y_true * y_pred, axis=(0, 1, 2))
-    # y_true_f = K.flatten(y_true)
-    # y_pred_f = K.flatten(y_pred)
-    score = (2. * K.sum(intersection) + smooth) / (K.sum(y_true) + K.sum(y_pred) + smooth)
-    return 1. - score
+    return 1. - dice_coef(y_true, y_pred)
 
 
 def bce_dice_loss(y_true, y_pred):
@@ -80,7 +70,7 @@ def bce_dice_loss(y_true, y_pred):
 
 def generalised_dice_loss(y_true,
                           y_pred,
-                          type_weight='Simple'):
+                          type_weight='Uniform'):
     """
     Function to calculate the Generalised Dice Loss defined in
         Sudre, C. et. al. (2017) Generalised Dice overlap as a deep learning
@@ -92,26 +82,26 @@ def generalised_dice_loss(y_true,
         Simple (inverse of volume) and Uniform (no weighting))
     :return: the loss
     """
-    n_el = tf.cast(K.prod(tf.shape(y_pred)), tf.float32)
+    # n_el = tf.cast(K.prod(tf.shape(y_pred)), tf.float32)
     # those ops need the y_true not to be 0! Although you find nan loss and accuracy
     if type_weight == 'Square':
-        weights_op = lambda x: 1. / (K.pow(K.sum(x, axis=(0, 1, 2)), a=3) + K.epsilon())
+        weights_op = lambda x: 1. / (tf.math.pow(K.sum(x, axis=(0, 1, 2)), y=3) + K.epsilon())
     elif type_weight == 'Simple':
-        weights_op = lambda x: 1. / (K.sum(x, axis=(0, 1, 2)) + K.epsilon())
+        weights_op = lambda x: 1. / (tf.reduce_sum(x, axis=(0, 1, 2)) + K.epsilon())
     elif type_weight == 'Uniform':
-        weights_op = lambda x: tf.constant(1.)
+        weights_op = lambda x: 1.
     else:
         raise ValueError("The variable type_weight \"{}\""
                          "is not defined.".format(type_weight))
     # treat each class separately
     w = weights_op(y_true)
     numerator = y_true * y_pred
-    numerator = w * K.sum(numerator, (0, 1, 2))
-    numerator = K.sum(numerator)
+    numerator = w * tf.reduce_sum(numerator, (0, 1, 2))
+    numerator = tf.reduce_sum(numerator)
 
-    denominator = K.sum(y_true, (0, 1, 2)) + K.sum(y_pred, (0, 1, 2))
+    denominator = tf.reduce_sum(y_true, (0, 1, 2)) + tf.reduce_sum(y_pred, (0, 1, 2))
     denominator = w * denominator
-    denominator = K.sum(denominator)
+    denominator = tf.reduce_sum(denominator)
 
     gen_dice_coef = numerator / denominator
     # generalised_dice_score = 2. * num / denom
@@ -119,7 +109,7 @@ def generalised_dice_loss(y_true,
 
 
 # Focal Tversky loss, brought to you by:  https://github.com/nabsabraham/focal-tversky-unet
-def tversky(y_true, y_pred, smooth=1e-6):
+def tversky(y_true, y_pred, smooth=K.epsilon()):
     y_true_pos = K.flatten(y_true)
     y_pred_pos = K.flatten(y_pred)
     true_pos = K.sum(y_true_pos * y_pred_pos)
@@ -139,23 +129,23 @@ def focal_tversky_loss(y_true,y_pred):
     return K.pow((1-pt_1), gamma)
 
 
-def focal_loss(alpha=0.25, gamma=2):
-    def focal_loss_with_logits(logits, targets, alpha, gamma, y_pred):
-        weight_a = alpha * (1 - y_pred) ** gamma * targets
-        weight_b = (1 - alpha) * y_pred ** gamma * (1 - targets)
-
-        return (tf.math.log1p(K.exp(-K.abs(logits))) + K.relu(-logits)) * (weight_a + weight_b) + logits * weight_b
-
-    def loss(y_true, y_pred):
-        y_pred = tf.clip_by_value(y_pred, K.epsilon(), 1 - K.epsilon())
-        logits = tf.log(y_pred / (1 - y_pred))
-
-        loss = focal_loss_with_logits(logits=logits, targets=y_true, alpha=alpha, gamma=gamma, y_pred=y_pred)
-
-        # or reduce_sum and/or axis=-1
-        return tf.reduce_mean(loss)
-
-    return loss
+# def focal_loss(alpha=0.25, gamma=2):
+#     def focal_loss_with_logits(logits, targets, alpha, gamma, y_pred):
+#         weight_a = alpha * (1 - y_pred) ** gamma * targets
+#         weight_b = (1 - alpha) * y_pred ** gamma * (1 - targets)
+#
+#         return (tf.math.log1p(K.exp(-K.abs(logits))) + K.relu(-logits)) * (weight_a + weight_b) + logits * weight_b
+#
+#     def loss(y_true, y_pred):
+#         y_pred = tf.clip_by_value(y_pred, K.epsilon(), 1 - K.epsilon())
+#         logits = tf.log(y_pred / (1 - y_pred))
+#
+#         loss = focal_loss_with_logits(logits=logits, targets=y_true, alpha=alpha, gamma=gamma, y_pred=y_pred)
+#
+#         # or reduce_sum and/or axis=-1
+#         return tf.reduce_mean(loss)
+#
+#     return loss
 
 
 

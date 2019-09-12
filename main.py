@@ -1,19 +1,19 @@
 import tensorflow as tf
 tf.compat.v1.enable_eager_execution()
-# import tensorflow.python.keras.backend as K
-# dtype = 'float16'
-# K.set_floatx(dtype)
-# K.set_epsilon(1e-4)
-import numpy as np
+import tensorflow.python.keras.backend as K
+dtype = 'float16'
+K.set_floatx(dtype)
+K.set_epsilon(1e-4)
+# import numpy as np
 import os, glob
+# os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
 from shutil import copy
 from utils.logger import set_logger
 from dataset_generator import DataGenerator
 from Dataset.digest_train_csv import Digestive
 from tensorflow.python.keras.callbacks import ModelCheckpoint, CSVLogger, TensorBoard, EarlyStopping, ReduceLROnPlateau
-from segcaps import CapsNet
+from segcaps import CapsNet, Container
 from competition_losses_metrics import *
-
 from config import conf
 
 
@@ -44,7 +44,7 @@ class SteelSeg:
 
         inputs = tf.keras.Input(shape)
         # initialize model_on_input
-        train_model = CapsNet(shape=shape, n_class=self.conf.n_classes)
+        train_model = Container(shape=shape, n_class=self.conf.n_classes)
         train_model.build(inputs.shape)
 
         # print summary
@@ -105,7 +105,7 @@ class SteelSeg:
         # setup early stopping to stop training if val_loss is not increasing after 3 epochs
         early_stopping = EarlyStopping(
             monitor=monitor,
-            patience=25,
+            patience=5,
             mode='max',
             verbose=0
         )
@@ -119,7 +119,10 @@ class SteelSeg:
             learning_rate=self.conf.learning_rate,
             beta_1=0.99,
             beta_2=0.999,
+            epsilon=K.epsilon(),
         )
+        # optimizer = tf.keras.optimizers.SGD(learning_rate=self.conf.learning_rate, nesterov=True, momentum=0.9)
+        # optimizer = tf.keras.mixed_precision.experimental.LossScaleOptimizer(optimizer, "dynamic")
         metrics = [dice_class_0, dice_class_1, dice_class_2, dice_class_3, dice_coef]
         # metrics = [dice_coef]
         self.model.compile(

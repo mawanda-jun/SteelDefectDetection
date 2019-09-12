@@ -340,7 +340,8 @@ def update_routing(votes, biases, logit_shape, num_dims, input_dim, output_dim,
     def _body(i, logits, activations):
         """Routing while loop."""
         # route: [batch, input_dim, output_dim, ...]
-        route = tf.nn.softmax(logits, axis=-1)
+        # route = tf.nn.softmax(logits, dim=-1)
+        route = K.softmax(logits)
         preactivate_unrolled = route * votes_trans
         preact_trans = tf.transpose(preactivate_unrolled, r_t_shape)
         preactivate = tf.reduce_sum(preact_trans, axis=1) + biases
@@ -355,17 +356,17 @@ def update_routing(votes, biases, logit_shape, num_dims, input_dim, output_dim,
         return (i + 1, logits, activations)
 
     activations = tf.TensorArray(
-      dtype=tf.float32, size=num_routing, clear_after_read=False)
-    logits = tf.fill(logit_shape, 0.0)
+      dtype=K.floatx(), size=num_routing, clear_after_read=False)
+    logits = tf.zeros(logit_shape, K.floatx())
 
     i = tf.constant(0, dtype=tf.int32)
     _, logits, activations = tf.while_loop(
       lambda i, logits, activations: i < num_routing,
       _body,
       loop_vars=[i, logits, activations],
-      swap_memory=True)
+      swap_memory=False)
 
-    return K.cast(activations.read(num_routing - 1), dtype='float32')
+    return K.cast(activations.read(num_routing - 1), dtype=K.floatx())
 
 
 def _squash(input_tensor):
